@@ -2,8 +2,6 @@ import * as cheerio from 'cheerio';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
-  // Increase timeout limit helper for Vercel (if using Pro, otherwise 10s hard limit on free)
-  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -26,22 +24,40 @@ export default async function handler(req, res) {
     
     const html = await response.text();
     const $ = cheerio.load(html);
+    
+    // Ensure base URL has a protocol
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+    const baseUrl = new URL(fullUrl);
 
-    // 2. Fix Relative URLs (Images/Links)
-    const baseUrl = new URL(url);
+    // 2. Fix Relative URLs (Images/Links) & Handle Lazy Loading
     $('img').each((i, el) => {
-      const src = $(el).attr('src');
-      if (src && !src.startsWith('data:') && !src.startsWith('http')) {
+      const $el = $(el);
+      
+      // Handle lazy loading attributes common in modern web
+      const realSrc = $el.attr('data-src') || $el.attr('data-original') || $el.attr('src');
+      
+      if (realSrc && !realSrc.startsWith('data:')) {
         try {
-          $(el).attr('src', new URL(src, baseUrl).href);
-        } catch (e) {}
+          // Resolve absolute URL
+          const absoluteUrl = new URL(realSrc, baseUrl).href;
+          $el.attr('src', absoluteUrl);
+          
+          // Remove srcset to prevent browser from using relative paths in it
+          $el.removeAttr('srcset');
+          $el.removeAttr('data-src'); 
+          $el.removeAttr('loading'); // Remove native lazy loading to ensure reader shows it
+        } catch (e) {
+          // Ignore invalid URLs
+        }
       }
     });
+
     $('a').each((i, el) => {
       const href = $(el).attr('href');
       if (href && !href.startsWith('http') && !href.startsWith('#')) {
         try {
           $(el).attr('href', new URL(href, baseUrl).href);
+          $(el).attr('target', '_blank');
         } catch (e) {}
       }
     });
@@ -57,7 +73,11 @@ export default async function handler(req, res) {
                         $('meta[property="og:description"]').attr('content') || 
                         "";
                         
-    const image = $('meta[property="og:image"]').attr('content') || "";
+    // Fix OG Image relative paths too
+    let image = $('meta[property="og:image"]').attr('content') || "";
+    if (image && !image.startsWith('http')) {
+      try { image = new URL(image, baseUrl).href; } catch(e) {}
+    }
     
     // Get text for AI context
     const bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
@@ -69,23 +89,26 @@ export default async function handler(req, res) {
     if (apiKey) {
       try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Use selected model or default to flash-1.5
         const modelName = userModel || "gemini-1.5-flash";
-        const model = genAI.getGenerativeModel({ model: modelName });
+        
+        // Configure model to return JSON specifically
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: { responseMimeType: "application/json" }
+        });
 
         const prompt = `
           You are a content curator. Analyze the text below from a webpage.
-          Return ONLY a valid JSON object. Do not include markdown formatting like \`\`\`json.
           
-          Text to analyze: "${bodyText.substring(0, 10000)}..."
+          Text to analyze: "${bodyText.substring(0, 12000)}..."
           
-          Required JSON Structure:
+          Return a JSON object with this structure:
           {
-            "summary": "A concise, 2-sentence summary of the content.",
-            "category": "Pick one: Technology, Science, Finance, Health, Design, Productivity, News, Entertainment, or General.",
+            "summary": "A concise, 2-sentence summary.",
+            "category": "One of: Technology, Science, Finance, Health, Design, Productivity, News, Entertainment, General",
             "difficulty": "Easy, Medium, or Advanced",
-            "readingTime": "Calculated reading time (e.g. '5 min')",
-            "tags": ["array", "of", "5", "lowercase", "keywords"]
+            "readingTime": "e.g. '5 min'",
+            "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
           }
         `;
 
@@ -93,14 +116,16 @@ export default async function handler(req, res) {
         const responseText = result.response.text();
         
         // --- ROBUST JSON PARSING ---
-        // Find the first '{' and the last '}' to extract just the JSON object
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        
-        if (!jsonMatch) {
-          throw new Error("AI did not return a valid JSON object");
+        // Even with JSON mode, sometimes models add wrapping. 
+        // We try standard parse first, then fallback to regex extraction.
+        let aiData;
+        try {
+          aiData = JSON.parse(responseText);
+        } catch (e) {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error("Invalid JSON format from AI");
+          aiData = JSON.parse(jsonMatch[0]);
         }
-        
-        const aiData = JSON.parse(jsonMatch[0]);
 
         return res.status(200).json({
           title,
@@ -113,7 +138,7 @@ export default async function handler(req, res) {
 
       } catch (aiError) {
         console.error("Gemini AI Error:", aiError);
-        // Don't fail completely, fall back to manual scraping below
+        // Fallback to manual scraping if AI fails (e.g. quota exceeded)
       }
     }
 
