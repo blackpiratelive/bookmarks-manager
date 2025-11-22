@@ -13,9 +13,32 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(url, {
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+    const baseUrl = new URL(fullUrl);
+    const isYoutube = fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be');
+
+    // --- 1. Special Handling for YouTube (oEmbed) ---
+    // YouTube HTML scraping is unreliable. We use their official oEmbed endpoint for core metadata.
+    let youtubeData = {};
+    if (isYoutube) {
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(fullUrl)}&format=json`;
+        const oembedRes = await fetch(oembedUrl);
+        if (oembedRes.ok) {
+          youtubeData = await oembedRes.json();
+        }
+      } catch (e) {
+        console.error("YouTube oEmbed failed:", e);
+      }
+    }
+
+    // --- 2. Fetch Page HTML ---
+    // We use a "Bot" User-Agent. YouTube/Twitter/etc often serve static HTML with metadata to bots,
+    // skipping the heavy JS execution that standard browsers need.
+    const response = await fetch(fullUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Accept-Language': 'en-US,en;q=0.9',
       }
     });
     
@@ -23,21 +46,23 @@ export default async function handler(req, res) {
     
     const html = await response.text();
     const $ = cheerio.load(html);
-    
-    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
-    const baseUrl = new URL(fullUrl);
 
-    // --- Helper: Detect Video Embed URL ---
+    // --- 3. Resolve Video Embed URL ---
     let embedUrl = null;
-    if (fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be')) {
-      const videoId = fullUrl.includes('v=') ? fullUrl.split('v=')[1].split('&')[0] : fullUrl.split('/').pop();
-      if (videoId) embedUrl = `https://www.youtube.com/embed/${videoId}`;
+    if (isYoutube) {
+      // Prefer regex for ID extraction to handle various YT formats (shorts, watch, youtu.be)
+      const match = fullUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^#&?]*)/);
+      if (match && match[1]) {
+        embedUrl = `https://www.youtube.com/embed/${match[1]}`;
+      }
     } else if (fullUrl.includes('vimeo.com')) {
       const videoId = fullUrl.split('/').pop();
       if (videoId) embedUrl = `https://player.vimeo.com/video/${videoId}`;
     }
 
-    // Fix Relative URLs
+    // --- 4. Clean & Extract Data ---
+    
+    // Fix Relative URLs for Images
     $('img').each((i, el) => {
       const $el = $(el);
       const realSrc = $el.attr('data-src') || $el.attr('data-original') || $el.attr('src');
@@ -51,19 +76,34 @@ export default async function handler(req, res) {
 
     $('script, style, nav, footer, header, aside, .ad, iframe').remove();
     
-    const title = $('title').first().text().trim() || url;
+    // PRIORITY: Use oEmbed title if available, otherwise fallback to HTML title
+    const title = youtubeData.title || 
+                  $('meta[property="og:title"]').attr('content') || 
+                  $('title').first().text().trim() || 
+                  url;
     
-    // Capture original description from meta tags before AI runs
-    const originalDescription = $('meta[name="description"]').attr('content') || 
-                                $('meta[property="og:description"]').attr('content') || 
+    // PRIORITY: Use specific meta tags for description
+    // YouTube often puts the description in og:description or name="description"
+    const originalDescription = $('meta[property="og:description"]').attr('content') || 
+                                $('meta[name="description"]').attr('content') || 
                                 "";
     
-    let image = $('meta[property="og:image"]').attr('content') || "";
+    // PRIORITY: Use oEmbed thumbnail if available
+    let image = youtubeData.thumbnail_url || 
+                $('meta[property="og:image"]').attr('content') || 
+                "";
+                
     if (image && !image.startsWith('http')) {
       try { image = new URL(image, baseUrl).href; } catch(e) {}
     }
     
-    const bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
+    // Prepare text for AI
+    // If it's YouTube, we can't really scrape the transcript easily without an API key.
+    // We feed the AI the Title and Metadata we found.
+    const bodyText = isYoutube 
+      ? `Title: ${title}\nAuthor: ${youtubeData.author_name || 'Unknown'}\nDescription: ${originalDescription}\nPlatform: YouTube Video`
+      : $('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
+      
     let contentHtml = $('article').html() || $('main').html() || $('body').html() || "<div>No readable content found.</div>";
 
     // --- AI ANALYSIS ---
@@ -99,7 +139,7 @@ export default async function handler(req, res) {
               "likes": "e.g. '1.2K' (if video)",
               "stars": "e.g. '4.5k' (if coding repo)",
               "forks": "e.g. '300' (if coding repo)",
-              "author": "Username or Channel Name",
+              "author": "${youtubeData.author_name || 'Username or Channel Name'}",
               "price": "e.g. '$29.99' (if shopping)",
               "platform": "e.g. 'YouTube', 'GitHub', 'Amazon'"
             }
@@ -123,7 +163,7 @@ export default async function handler(req, res) {
           content: contentHtml,
           image,
           videoEmbed: embedUrl, 
-          originalDescription: originalDescription, // Pass this back explicitly
+          originalDescription: originalDescription,
           date: new Date().toLocaleDateString(),
           ...aiData,
           usedModel: modelName
@@ -136,7 +176,7 @@ export default async function handler(req, res) {
 
     // --- FALLBACK (Manual) ---
     let category = 'Articles';
-    if (fullUrl.includes('youtube') || fullUrl.includes('vimeo')) category = 'Videos';
+    if (isYoutube || fullUrl.includes('vimeo')) category = 'Videos';
     else if (fullUrl.includes('github') || fullUrl.includes('gitlab')) category = 'Coding';
     else if (fullUrl.includes('amazon') || fullUrl.includes('ebay')) category = 'Shopping';
 
@@ -150,7 +190,10 @@ export default async function handler(req, res) {
       readingTime: "5 min",
       difficulty: "Medium",
       tags: [category.toLowerCase()],
-      metadata: {},
+      metadata: {
+        author: youtubeData.author_name,
+        platform: isYoutube ? 'YouTube' : 'Web'
+      },
       videoEmbed: embedUrl,
       date: new Date().toLocaleDateString(),
       usedModel: 'Manual Fallback'
