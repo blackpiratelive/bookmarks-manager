@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Inbox, Star, Archive, Trash2, Tag, Clock, BookOpen, 
   X, ChevronLeft, Type, Sun, Moon, Coffee, Check, Search, 
   Layout, ExternalLink, Sparkles, Settings, Key, Image as ImageIcon,
-  RefreshCw, Server, AlertCircle, 
+  RefreshCw, Server, AlertCircle, MoreHorizontal, FolderInput,
   Youtube, Code2, ShoppingBag, GraduationCap, FileText, ThumbsUp, GitFork, User
 } from 'lucide-react';
 
@@ -20,6 +20,7 @@ const App = () => {
   const [processingStatus, setProcessingStatus] = useState('');
   const [readerItem, setReaderItem] = useState(null); 
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeMenuId, setActiveMenuId] = useState(null); // Track open menus
   
   // Settings State
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini-api-key') || '');
@@ -37,6 +38,13 @@ const App = () => {
   useEffect(() => localStorage.setItem('things3-bookmarks', JSON.stringify(bookmarks)), [bookmarks]);
   useEffect(() => localStorage.setItem('gemini-api-key', apiKey), [apiKey]);
   useEffect(() => localStorage.setItem('gemini-model', selectedModel), [selectedModel]);
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const closeMenu = () => setActiveMenuId(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, []);
 
   // --- Actions ---
   const fetchModels = async () => {
@@ -100,7 +108,7 @@ const App = () => {
       setBookmarks([newBookmark, ...bookmarks]);
       setNewUrl('');
       setIsAdding(false);
-      setActiveView(aiData.category ? aiData.category.toLowerCase() : 'inbox'); // Auto-switch to new category
+      setActiveView(aiData.category ? aiData.category.toLowerCase() : 'inbox');
     } catch (error) {
       console.error("Analysis failed", error);
       alert(`Failed to analyze: ${error.message}`);
@@ -122,9 +130,10 @@ const App = () => {
     }
   };
 
-  const moveToArchive = (id, e) => {
+  const changeCategory = (id, newCategory, e) => {
     e.stopPropagation();
-    setBookmarks(bookmarks.map(b => b.id === id ? { ...b, isArchived: !b.isArchived } : b));
+    setBookmarks(bookmarks.map(b => b.id === id ? { ...b, category: newCategory } : b));
+    setActiveMenuId(null);
   };
 
   // --- Filtering ---
@@ -143,49 +152,81 @@ const App = () => {
     if (activeView === 'favorites') return filtered.filter(b => b.isFavorite && !b.isArchived);
     if (activeView === 'archive') return filtered.filter(b => b.isArchived);
 
-    // Category filtering (case insensitive match)
+    // Category filtering
     return filtered.filter(b => b.category && b.category.toLowerCase() === activeView.toLowerCase() && !b.isArchived);
   };
 
   const displayBookmarks = getFilteredBookmarks();
 
-  // --- Renderers for Different Categories ---
+  // --- Components ---
+
+  const CategoryMenu = ({ bookmark }) => (
+    <div className="absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-40 z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+      <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-50 mb-1">Move to...</div>
+      {['Videos', 'Coding', 'Articles', 'Research', 'Shopping'].map(cat => (
+        <button
+          key={cat}
+          onClick={(e) => changeCategory(bookmark.id, cat, e)}
+          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${bookmark.category === cat ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}
+        >
+          {cat === 'Videos' && <Youtube size={14} />}
+          {cat === 'Coding' && <Code2 size={14} />}
+          {cat === 'Articles' && <FileText size={14} />}
+          {cat === 'Research' && <GraduationCap size={14} />}
+          {cat === 'Shopping' && <ShoppingBag size={14} />}
+          {cat}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Wrapper for Card Actions (Favorites, Delete, Move)
+  const CardActions = ({ bookmark }) => (
+    <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 p-1 rounded-lg backdrop-blur z-10" onClick={e => e.stopPropagation()}>
+      <button onClick={(e) => toggleFavorite(bookmark.id, e)} className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${bookmark.isFavorite ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}>
+        <Star size={16} fill={bookmark.isFavorite ? "currentColor" : "none"} />
+      </button>
+      
+      <div className="relative">
+        <button 
+          onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === bookmark.id ? null : bookmark.id); }}
+          className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${activeMenuId === bookmark.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-900'}`}
+        >
+          <MoreHorizontal size={16} />
+        </button>
+        {activeMenuId === bookmark.id && <CategoryMenu bookmark={bookmark} />}
+      </div>
+
+      <button onClick={(e) => deleteBookmark(bookmark.id, e)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500">
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+
+  // --- Card Renderers ---
+  // (Keeping the previous card designs, just ensuring they have the new CardActions)
 
   const renderVideoCard = (item) => (
     <div className="flex flex-col gap-4 h-full">
-       {/* Embed Video if available */}
        {item.videoEmbed ? (
          <div className="w-full aspect-video rounded-lg overflow-hidden bg-black shadow-inner">
-           <iframe 
-             src={item.videoEmbed} 
-             title={item.title}
-             className="w-full h-full" 
-             allowFullScreen 
-             frameBorder="0"
-           />
+           <iframe src={item.videoEmbed} title={item.title} className="w-full h-full pointer-events-none" />
          </div>
        ) : (
          <div className="w-full h-48 bg-gray-900 rounded-lg flex items-center justify-center text-gray-500 relative overflow-hidden">
             {item.image ? <img src={item.image} className="w-full h-full object-cover opacity-80" /> : <Youtube size={48} />}
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-               <div className="bg-white/20 backdrop-blur-sm p-3 rounded-full border border-white/50">
-                 <Youtube size={32} className="text-white fill-current" />
-               </div>
+               <div className="bg-white/20 backdrop-blur-sm p-3 rounded-full border border-white/50"><Youtube size={32} className="text-white fill-current" /></div>
             </div>
          </div>
        )}
-       
        <div className="flex flex-col flex-1">
-         <div className="flex items-start justify-between mb-2">
-           <h3 className="text-lg font-bold text-gray-900 line-clamp-2 leading-tight hover:text-blue-600">{item.title}</h3>
-         </div>
-         
+         <h3 className="text-lg font-bold text-gray-900 line-clamp-2 leading-tight hover:text-blue-600 mb-2">{item.title}</h3>
          <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
             {item.metadata?.platform && <span className="flex items-center gap-1 text-red-600 font-medium"><Youtube size={14} /> {item.metadata.platform}</span>}
             {item.metadata?.likes && <span className="flex items-center gap-1"><ThumbsUp size={14} /> {item.metadata.likes}</span>}
             <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-xs font-bold">AI Summary</span>
          </div>
-
          <p className="text-gray-600 text-sm leading-relaxed flex-1">{item.summary}</p>
        </div>
     </div>
@@ -195,30 +236,18 @@ const App = () => {
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between mb-3">
          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-md border border-gray-200">
-                <Code2 size={24} className="text-gray-700" />
-            </div>
+            <div className="p-2 bg-gray-100 rounded-md border border-gray-200"><Code2 size={24} className="text-gray-700" /></div>
             <div>
               <h3 className="font-bold text-gray-900 text-lg leading-tight line-clamp-1">{item.title}</h3>
               {item.metadata?.author && <span className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><User size={10}/> {item.metadata.author}</span>}
             </div>
          </div>
       </div>
-
       <p className="text-sm text-gray-600 mb-4 flex-1 line-clamp-3">{item.summary}</p>
-
       <div className="flex items-center gap-4 py-3 px-4 bg-gray-50 rounded-lg border border-gray-100 text-sm mt-auto">
-         <div className="flex items-center gap-1.5 font-medium text-gray-700">
-            <Star size={16} className="text-yellow-500 fill-yellow-500" />
-            {item.metadata?.stars || '0'}
-         </div>
-         <div className="flex items-center gap-1.5 font-medium text-gray-700">
-            <GitFork size={16} className="text-gray-400" />
-            {item.metadata?.forks || '0'}
-         </div>
-         <div className="ml-auto text-xs text-gray-500 font-mono bg-white px-2 py-1 rounded border border-gray-200 shadow-sm">
-            {item.metadata?.platform || 'GitHub'}
-         </div>
+         <div className="flex items-center gap-1.5 font-medium text-gray-700"><Star size={16} className="text-yellow-500 fill-yellow-500" />{item.metadata?.stars || '0'}</div>
+         <div className="flex items-center gap-1.5 font-medium text-gray-700"><GitFork size={16} className="text-gray-400" />{item.metadata?.forks || '0'}</div>
+         <div className="ml-auto text-xs text-gray-500 font-mono bg-white px-2 py-1 rounded border border-gray-200 shadow-sm">{item.metadata?.platform || 'GitHub'}</div>
       </div>
     </div>
   );
@@ -231,11 +260,7 @@ const App = () => {
       <div className="flex-1 flex flex-col">
          <div className="flex justify-between items-start">
             <h3 className="font-bold text-gray-900 text-lg line-clamp-2 leading-tight">{item.title}</h3>
-            {item.metadata?.price && (
-              <span className="ml-2 bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-md text-sm whitespace-nowrap shadow-sm">
-                {item.metadata.price}
-              </span>
-            )}
+            {item.metadata?.price && <span className="ml-2 bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-md text-sm whitespace-nowrap shadow-sm">{item.metadata.price}</span>}
          </div>
          <p className="text-sm text-gray-500 mt-2 mb-3 line-clamp-2 flex-1">{item.summary}</p>
          <div className="flex flex-wrap gap-2 mt-auto">
@@ -248,22 +273,12 @@ const App = () => {
   const renderStandardCard = (item) => (
     <div className="flex gap-4 h-full">
       <div className="flex-1 flex flex-col">
-        <h3 className="font-semibold text-lg text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
-          {item.title}
-        </h3>
-        <p className="text-gray-500 text-sm mb-4 line-clamp-2 leading-relaxed mt-1 flex-1">
-          {item.summary}
-        </p>
+        <h3 className="font-semibold text-lg text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">{item.title}</h3>
+        <p className="text-gray-500 text-sm mb-4 line-clamp-2 leading-relaxed mt-1 flex-1">{item.summary}</p>
         <div className="flex items-center gap-4 text-xs font-medium text-gray-400 mt-auto">
-            <span className={`px-2 py-0.5 rounded-full bg-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-50 text-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-600 border border-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-100`}>
-              {item.difficulty}
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock size={12} /> {item.readingTime}
-            </span>
-            <span className="flex items-center gap-1">
-              <Tag size={12} /> {item.tags.slice(0, 2).join(', ')}
-            </span>
+            <span className={`px-2 py-0.5 rounded-full bg-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-50 text-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-600 border border-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-100`}>{item.difficulty}</span>
+            <span className="flex items-center gap-1"><Clock size={12} /> {item.readingTime}</span>
+            <span className="flex items-center gap-1"><Tag size={12} /> {item.tags.slice(0, 2).join(', ')}</span>
         </div>
       </div>
       {item.image && (
@@ -274,18 +289,10 @@ const App = () => {
     </div>
   );
 
-  // Sidebar Item
+  // Nav Item
   const NavItem = ({ id, icon: Icon, label, count }) => (
-    <button
-      onClick={() => setActiveView(id)}
-      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${
-        activeView === id ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <Icon size={18} className={activeView === id ? 'text-blue-500' : 'text-gray-400'} />
-        <span>{label}</span>
-      </div>
+    <button onClick={() => setActiveView(id)} className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${activeView === id ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'}`}>
+      <div className="flex items-center gap-3"><Icon size={18} className={activeView === id ? 'text-blue-500' : 'text-gray-400'} /><span>{label}</span></div>
       {count > 0 && <span className="text-xs font-semibold text-gray-400">{count}</span>}
     </button>
   );
@@ -321,7 +328,7 @@ const App = () => {
 
         <div className="flex-1 overflow-y-auto px-8 py-6">
           {activeView === 'settings' ? (
-            // --- Rich Settings View ---
+            /* Settings View */
             <div className="max-w-2xl mx-auto">
               <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
                 <div className="flex items-center gap-3 mb-6">
@@ -329,11 +336,8 @@ const App = () => {
                   <div><h3 className="text-lg font-bold text-gray-900">API Configuration</h3><p className="text-gray-500 text-sm">Manage your Gemini API key</p></div>
                 </div>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Gemini API Key</label>
-                    <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-50 outline-none transition-all font-mono text-sm" />
-                    <p className="mt-2 text-xs text-gray-400">Stored locally in your browser.</p>
-                  </div>
+                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-50 outline-none transition-all font-mono text-sm" />
+                  <p className="text-xs text-gray-400">Stored locally in your browser.</p>
                 </div>
               </div>
 
@@ -348,37 +352,24 @@ const App = () => {
                   </button>
                 </div>
 
-                <div className="space-y-4">
-                  {availableModels.length > 0 ? (
-                    <>
-                      <div className="relative">
-                        <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-                        <input type="text" placeholder="Search models (e.g., 'flash', 'pro')..." value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-purple-500 outline-none" />
-                      </div>
-                      <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
-                        {availableModels
-                          .filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase()))
-                          .map(model => (
-                            <button key={model.name} onClick={() => setSelectedModel(model.name)} className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between group ${selectedModel === model.name ? 'bg-purple-50' : ''}`}>
-                              <div>
-                                <div className={`font-medium text-sm ${selectedModel === model.name ? 'text-purple-700' : 'text-gray-900'}`}>{model.displayName || model.name}</div>
-                                <div className="text-xs text-gray-500 mt-0.5">{model.name}</div>
-                              </div>
-                              {selectedModel === model.name && <Check size={16} className="text-purple-600" />}
-                            </button>
-                          ))}
-                      </div>
-                    </>
-                  ) : (
-                     <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                       <p className="text-gray-500 text-sm">Click "Load Models" to fetch available models associated with your API key.</p>
-                       <div className="mt-4 p-2 bg-white inline-block rounded border border-gray-200 text-xs font-mono">Current: {selectedModel}</div>
-                     </div>
-                  )}
-                </div>
+                {availableModels.length > 0 && (
+                  <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                    {availableModels
+                      .filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase()))
+                      .map(model => (
+                        <button key={model.name} onClick={() => setSelectedModel(model.name)} className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between group ${selectedModel === model.name ? 'bg-purple-50' : ''}`}>
+                          <div>
+                            <div className={`font-medium text-sm ${selectedModel === model.name ? 'text-purple-700' : 'text-gray-900'}`}>{model.displayName || model.name}</div>
+                          </div>
+                          {selectedModel === model.name && <Check size={16} className="text-purple-600" />}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
+            /* Bookmarks Grid */
             <div className={activeView === 'videos' || activeView === 'coding' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6" : "space-y-4 pb-20"}>
               {displayBookmarks.map(bookmark => (
                 <div 
@@ -386,13 +377,7 @@ const App = () => {
                   onClick={() => setReaderItem(bookmark)}
                   className="group relative bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer ring-1 ring-transparent hover:ring-blue-100 hover:border-blue-200"
                 >
-                   {/* Actions Overlay */}
-                   <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 p-1 rounded-lg backdrop-blur z-10">
-                      <button onClick={(e) => toggleFavorite(bookmark.id, e)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-yellow-500"><Star size={16} /></button>
-                      <button onClick={(e) => deleteBookmark(bookmark.id, e)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
-                   </div>
-
-                   {/* Dynamic Content Rendering */}
+                   <CardActions bookmark={bookmark} />
                    {bookmark.category === 'Videos' ? renderVideoCard(bookmark) :
                     bookmark.category === 'Coding' ? renderCodingCard(bookmark) :
                     bookmark.category === 'Shopping' ? renderShoppingCard(bookmark) :
@@ -404,7 +389,6 @@ const App = () => {
           )}
         </div>
         
-        {/* Floating Add & Modals */}
         {activeView !== 'settings' && (
           <div className="absolute bottom-8 right-8 z-50">
              <button onClick={() => setIsAdding(true)} className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"><Plus size={28} /></button>
@@ -414,51 +398,41 @@ const App = () => {
         {isAdding && (
            <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !isProcessing && setIsAdding(false)}>
              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-800">New Bookmark</h3>
-                  {!isProcessing && <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>}
-                </div>
-                <div className="space-y-4">
-                  <input autoFocus type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="Paste URL here..." className="w-full text-lg border-b-2 py-2 outline-none focus:border-blue-500 bg-transparent" onKeyDown={e => e.key === 'Enter' && handleAddBookmark(e)} />
-                  {isProcessing ? (
-                    <div className="py-8 flex flex-col items-center justify-center text-blue-500">
-                      <div className="animate-spin mb-3"><Sparkles size={24} /></div>
-                      <span className="text-sm font-medium animate-pulse">{processingStatus}</span>
-                    </div>
-                  ) : (
-                    <div className="flex justify-end pt-4">
-                       <button onClick={handleAddBookmark} disabled={!newUrl} className="bg-blue-500 text-white px-6 py-2 rounded-full font-medium shadow-md hover:bg-blue-600 disabled:opacity-50 transition-all">Save to Inbox</button>
-                    </div>
-                  )}
-                </div>
+                <h3 className="text-xl font-bold mb-4">Add Link</h3>
+                <input autoFocus type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="Paste URL here..." className="w-full text-lg border-b-2 py-2 outline-none focus:border-blue-500 bg-transparent" onKeyDown={e => e.key === 'Enter' && handleAddBookmark(e)} />
+                {isProcessing ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-blue-500">
+                    <div className="animate-spin mb-3"><Sparkles size={24} /></div>
+                    <span className="text-sm font-medium animate-pulse">{processingStatus}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-end pt-4">
+                     <button onClick={handleAddBookmark} disabled={!newUrl} className="bg-blue-500 text-white px-6 py-2 rounded-full font-medium shadow-md hover:bg-blue-600 disabled:opacity-50 transition-all">Save to Inbox</button>
+                  </div>
+                )}
              </div>
            </div>
         )}
 
-        {/* --- RICH READER MODE (Restored Features) --- */}
+        {/* --- READER MODE (Video & Standard) --- */}
         {readerItem && (
           <div className={`fixed inset-0 z-50 overflow-y-auto transition-colors duration-300 ${
             readerSettings.theme === 'dark' ? 'bg-gray-900 text-gray-300' : 
             readerSettings.theme === 'sepia' ? 'bg-[#f8f1e3] text-[#4f321c]' : 'bg-white text-gray-900'
           }`}>
-            {/* Reader Header */}
+            {/* Header */}
             <div className={`sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b transition-colors ${
                readerSettings.theme === 'dark' ? 'border-gray-800 bg-gray-900/95' : 
                readerSettings.theme === 'sepia' ? 'border-[#e0d6c2] bg-[#f8f1e3]/95' : 'border-gray-100 bg-white/95'
             } backdrop-blur-sm`}>
-              <button 
-                onClick={() => setReaderItem(null)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-black/5 transition-colors"
-              >
-                <ChevronLeft size={20} />
-                <span className="font-medium">Back</span>
+              <button onClick={() => setReaderItem(null)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-black/5 transition-colors">
+                <ChevronLeft size={20} /> <span className="font-medium">Back</span>
               </button>
 
-              <div className="flex items-center gap-4">
-                 {/* Appearance Menu */}
-                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5">
+              {/* Only show font options if NOT a video layout */}
+              {readerItem.category !== 'Videos' && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5">
                     <button onClick={() => setReaderSettings(s => ({...s, size: Math.max(12, s.size - 2)}))} className="p-1 hover:text-blue-500"><Type size={14} /></button>
-                    <div className="w-px h-4 bg-gray-400/30"></div>
                     <button onClick={() => setReaderSettings(s => ({...s, size: Math.min(32, s.size + 2)}))} className="p-1 hover:text-blue-500"><Type size={20} /></button>
                     <div className="w-px h-4 bg-gray-400/30 mx-2"></div>
                     <button onClick={() => setReaderSettings(s => ({...s, font: 'sans'}))} className={`text-xs font-sans font-bold ${readerSettings.font === 'sans' ? 'text-blue-500' : ''}`}>Ag</button>
@@ -468,55 +442,80 @@ const App = () => {
                     <button onClick={() => setReaderSettings(s => ({...s, theme: 'white'}))} className={`p-1 ${readerSettings.theme === 'white' ? 'text-blue-500' : ''}`}><Sun size={16}/></button>
                     <button onClick={() => setReaderSettings(s => ({...s, theme: 'sepia'}))} className={`p-1 ${readerSettings.theme === 'sepia' ? 'text-blue-500' : ''}`}><Coffee size={16}/></button>
                     <button onClick={() => setReaderSettings(s => ({...s, theme: 'dark'}))} className={`p-1 ${readerSettings.theme === 'dark' ? 'text-blue-500' : ''}`}><Moon size={16}/></button>
-                 </div>
-              </div>
+                </div>
+              )}
             </div>
 
-            {/* Reader Content */}
-            <div className={`max-w-2xl mx-auto px-6 py-12 ${
-              readerSettings.font === 'serif' ? 'font-serif' : readerSettings.font === 'mono' ? 'font-mono' : 'font-sans'
-            }`} style={{ fontSize: `${readerSettings.size}px`, lineHeight: '1.8' }}>
-              
-              {/* Metadata Header */}
-              <div className="mb-12 border-b border-black/10 pb-8">
-                <h1 className="text-4xl font-bold mb-4 leading-tight">{readerItem.title}</h1>
-                <div className="flex flex-wrap items-center gap-4 text-base opacity-60 mb-6">
-                   <span className="flex items-center gap-1"><ExternalLink size={16}/> {new URL(readerItem.url).hostname}</span>
-                   <span>•</span>
-                   <span className="flex items-center gap-1"><Clock size={16}/> {readerItem.readingTime} read</span>
-                   <span>•</span>
-                   <span className="flex items-center gap-1"><Layout size={16}/> {readerItem.difficulty}</span>
-                   <span>•</span>
-                   <span>{readerItem.date}</span>
+            {/* Content Layout Switch */}
+            <div className="max-w-3xl mx-auto px-6 py-12">
+              {readerItem.category === 'Videos' ? (
+                /* --- VIDEO READER LAYOUT --- */
+                <div className="space-y-8">
+                  {/* 1. Video Player */}
+                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-black shadow-2xl">
+                    {readerItem.videoEmbed ? (
+                      <iframe src={readerItem.videoEmbed} title={readerItem.title} className="w-full h-full" allowFullScreen frameBorder="0" />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500">Video not embeddable</div>
+                    )}
+                  </div>
+
+                  {/* 2. Header & AI Summary */}
+                  <div className="space-y-6">
+                    <h1 className="text-3xl font-bold leading-tight">{readerItem.title}</h1>
+                    
+                    <div className="flex items-center gap-6 text-sm opacity-70">
+                      {readerItem.metadata?.platform && <span className="flex items-center gap-2 font-medium text-red-500"><Youtube size={18} /> {readerItem.metadata.platform}</span>}
+                      {readerItem.metadata?.likes && <span>{readerItem.metadata.likes} likes</span>}
+                      <span>{readerItem.date}</span>
+                    </div>
+
+                    <div className={`p-6 rounded-xl border-l-4 border-blue-500 ${readerSettings.theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50'}`}>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-blue-500 mb-2 flex items-center gap-2">
+                        <Sparkles size={14} /> AI Summary
+                      </h3>
+                      <p className="text-lg leading-relaxed">{readerItem.summary}</p>
+                    </div>
+                  </div>
+
+                  {/* 3. Original Description */}
+                  <div className="pt-8 border-t border-black/10">
+                    <h3 className="font-bold text-lg mb-4 opacity-80">Original Description</h3>
+                    <div className={`prose ${readerSettings.theme === 'dark' ? 'prose-invert' : ''} max-w-none whitespace-pre-wrap leading-relaxed opacity-80`}>
+                      {readerItem.originalDescription || "No description available."}
+                    </div>
+                  </div>
                 </div>
-                
-                {/* Video Embed in Reader */}
-                {readerItem.videoEmbed && (
-                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-black shadow-lg mb-8">
-                    <iframe src={readerItem.videoEmbed} title={readerItem.title} className="w-full h-full" allowFullScreen frameBorder="0" />
-                  </div>
-                )}
-
-                {/* Featured Image (if no video) */}
-                {readerItem.image && !readerItem.videoEmbed && (
-                  <div className="rounded-xl overflow-hidden shadow-lg mb-8">
-                    <img src={readerItem.image} alt="Cover" className="w-full h-auto object-cover max-h-[400px]" onError={(e) => e.target.style.display = 'none'} />
-                  </div>
-                )}
-              </div>
-
-              <div className="prose-content" dangerouslySetInnerHTML={{ __html: readerItem.content }} />
-              
-              {/* Dynamic Styles for Reader Content */}
-              <style>{`
-                .prose-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 2rem 0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-                .prose-content p { margin-bottom: 1.5em; }
-                .prose-content h1, .prose-content h2, .prose-content h3 { margin-top: 2em; margin-bottom: 0.5em; font-weight: bold; line-height: 1.3; }
-                .prose-content a { text-decoration: underline; text-underline-offset: 4px; color: inherit; opacity: 0.8; }
-                .prose-content blockquote { border-left: 4px solid currentColor; opacity: 0.7; padding-left: 1rem; margin: 2rem 0; font-style: italic; }
-                .prose-content ul, .prose-content ol { margin: 1.5rem 0; padding-left: 2rem; }
-                .prose-content li { margin-bottom: 0.5rem; list-style-type: disc; }
-              `}</style>
+              ) : (
+                /* --- STANDARD READER LAYOUT --- */
+                <div style={{ fontSize: `${readerSettings.size}px`, lineHeight: '1.8' }} className={readerSettings.font === 'serif' ? 'font-serif' : readerSettings.font === 'mono' ? 'font-mono' : 'font-sans'}>
+                    <div className="mb-12 border-b border-black/10 pb-8">
+                      <h1 className="text-4xl font-bold mb-4 leading-tight">{readerItem.title}</h1>
+                      <div className="flex flex-wrap items-center gap-4 text-base opacity-60 mb-6">
+                         <span className="flex items-center gap-1"><ExternalLink size={16}/> {new URL(readerItem.url).hostname}</span>
+                         <span className="flex items-center gap-1"><Clock size={16}/> {readerItem.readingTime} read</span>
+                         <span className="flex items-center gap-1"><Layout size={16}/> {readerItem.difficulty}</span>
+                         <span>{readerItem.date}</span>
+                      </div>
+                      
+                      {readerItem.image && (
+                        <div className="rounded-xl overflow-hidden shadow-lg mb-8">
+                          <img src={readerItem.image} alt="Cover" className="w-full h-auto object-cover max-h-[400px]" onError={(e) => e.target.style.display = 'none'} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="prose-content" dangerouslySetInnerHTML={{ __html: readerItem.content }} />
+                    <style>{`
+                      .prose-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 2rem 0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+                      .prose-content p { margin-bottom: 1.5em; }
+                      .prose-content h1, .prose-content h2, .prose-content h3 { margin-top: 2em; margin-bottom: 0.5em; font-weight: bold; line-height: 1.3; }
+                      .prose-content a { text-decoration: underline; text-underline-offset: 4px; color: inherit; opacity: 0.8; }
+                      .prose-content blockquote { border-left: 4px solid currentColor; opacity: 0.7; padding-left: 1rem; margin: 2rem 0; font-style: italic; }
+                      .prose-content ul, .prose-content ol { margin: 1.5rem 0; padding-left: 2rem; }
+                      .prose-content li { margin-bottom: 0.5rem; list-style-type: disc; }
+                    `}</style>
+                </div>
+              )}
             </div>
           </div>
         )}
