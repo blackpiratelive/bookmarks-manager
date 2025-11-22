@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const isYoutube = fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be');
     const isGithub = fullUrl.includes('github.com');
     
-    // --- 1. YouTube oEmbed & Metadata Scraping ---
+    // --- 1. YouTube oEmbed (Base Metadata) ---
     let youtubeData = {};
     if (isYoutube) {
       try {
@@ -35,7 +35,8 @@ export default async function handler(req, res) {
     // --- 2. Fetch Page HTML ---
     const response = await fetch(fullUrl, {
       headers: {
-        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', // Bot UA for better metadata
+        // Using a standard browser UA helps get the full page structure for YouTube script parsing
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
       }
     });
@@ -45,15 +46,45 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // --- 3. DIRECT METADATA SCRAPING ---
+    // --- 3. ADVANCED DESCRIPTION EXTRACTION ---
+    let fullDescription = "";
+
+    if (isYoutube) {
+      // Attempt to extract full description from YouTube's embedded JSON
+      // YouTube stores full data in a variable called 'ytInitialPlayerResponse'
+      try {
+        const scriptTags = $('script');
+        for (let i = 0; i < scriptTags.length; i++) {
+          const scriptContent = $(scriptTags[i]).html();
+          if (scriptContent && scriptContent.includes('ytInitialPlayerResponse')) {
+            // Extract the JSON object
+            const match = scriptContent.match(/var ytInitialPlayerResponse = ({.*?});/);
+            if (match && match[1]) {
+              const data = JSON.parse(match[1]);
+              fullDescription = data.videoDetails?.shortDescription || ""; // 'shortDescription' is actually the full text
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.log("YouTube deep scrape failed, falling back to meta", e);
+      }
+    }
+
+    // Fallback to meta tags if deep scrape failed or not YouTube
+    if (!fullDescription) {
+      fullDescription = $('meta[property="og:description"]').attr('content') || 
+                        $('meta[name="description"]').attr('content') || 
+                        "";
+    }
+
+    // --- 4. DIRECT METADATA SCRAPING ---
     let scrapedMetadata = {};
     
     // A. Coding (GitHub)
     if (isGithub) {
       try {
-        // GitHub often puts stars/forks in specific social count classes or IDs
-        const stars = $('.js-social-count').first().text().trim() || 
-                      $('#repo-stars-counter-star').text().trim();
+        const stars = $('.js-social-count').first().text().trim() || $('#repo-stars-counter-star').text().trim();
         const forks = $('#repo-network-counter').text().trim();
         const author = $('span.author a').text().trim();
         
@@ -61,17 +92,16 @@ export default async function handler(req, res) {
         if (forks) scrapedMetadata.forks = forks;
         if (author) scrapedMetadata.author = author;
         scrapedMetadata.platform = 'GitHub';
-      } catch (e) { console.log("GitHub scraping failed", e); }
+      } catch (e) {}
     }
 
     // B. Videos (YouTube)
     if (isYoutube) {
       if (youtubeData.author_name) scrapedMetadata.author = youtubeData.author_name;
       scrapedMetadata.platform = 'YouTube';
-      // Note: Likes/Views are client-side rendered on YT, very hard to fetch via static HTML.
     }
 
-    // C. Shopping (Generic Selectors)
+    // C. Shopping
     const priceSelectors = ['.a-price .a-offscreen', '.price', '[itemprop="price"]', '#priceblock_ourprice'];
     for (const sel of priceSelectors) {
       const price = $(sel).first().text().trim();
@@ -81,7 +111,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- 4. Resolve Video Embed URL ---
+    // --- 5. Resolve Video Embed URL ---
     let embedUrl = null;
     if (isYoutube) {
       const match = fullUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^#&?]*)/);
@@ -91,7 +121,7 @@ export default async function handler(req, res) {
       if (videoId) embedUrl = `https://player.vimeo.com/video/${videoId}`;
     }
 
-    // --- 5. Standard Cleanup ---
+    // --- 6. Standard Cleanup ---
     $('img').each((i, el) => {
       const $el = $(el);
       const realSrc = $el.attr('data-src') || $el.attr('data-original') || $el.attr('src');
@@ -105,7 +135,6 @@ export default async function handler(req, res) {
     $('script, style, nav, footer, header, aside, .ad, iframe').remove();
     
     const title = youtubeData.title || $('meta[property="og:title"]').attr('content') || $('title').first().text().trim() || url;
-    const originalDescription = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || "";
     let image = youtubeData.thumbnail_url || $('meta[property="og:image"]').attr('content') || "";
     if (image && !image.startsWith('http')) try { image = new URL(image, baseUrl).href; } catch(e) {}
     
@@ -121,38 +150,41 @@ export default async function handler(req, res) {
           generationConfig: { responseMimeType: "application/json" }
         });
 
-        // CONDITIONAL PROMPT: 
-        // If YouTube -> Give URL.
-        // If Other -> Give scraped Text.
+        // Prepare Prompt Context
         let contextData = "";
         if (isYoutube) {
-           contextData = `VIDEO_URL: ${fullUrl}\n(Note: Please summarize the video content found at this URL directly.)`;
+           // We pass the DEEP SCRAPED description to the AI for a better summary
+           contextData = `
+             VIDEO_TITLE: ${title}
+             VIDEO_DESCRIPTION (Full): "${fullDescription.substring(0, 15000)}"
+             (Summarize the video content based on this description.)
+           `;
         } else {
            const bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
            contextData = `WEBPAGE_TEXT: "${bodyText.substring(0, 12000)}..."`;
         }
 
         const prompt = `
-          You are a content curator.
+          You are an expert content analyst.
           ${contextData}
           
           I have already scraped this metadata: ${JSON.stringify(scrapedMetadata)}.
-          Please merge this with your analysis.
           
           Task:
           1. Determine the Category (Videos, Coding, Shopping, Research, Articles).
-             - If YouTube/Vimeo, strictly "Videos".
-             - If GitHub/StackOverflow, strictly "Coding".
-          2. Generate a 2-sentence summary.
-          3. Extract additional metadata I might have missed (e.g., author, likes, platform).
+          2. Generate a **Comprehensive Summary**. 
+             - NOT just 1-2 sentences. 
+             - Write a detailed paragraph (approx 80-120 words).
+             - Include key takeaways or plot points if applicable.
+          3. Extract additional metadata.
 
           Return JSON:
           {
-            "summary": "...",
+            "summary": "Detailed, engaging paragraph summary...",
             "category": "Videos | Coding | Shopping | Research | Articles",
             "difficulty": "Easy | Medium | Advanced",
             "readingTime": "e.g. '5 min'",
-            "tags": ["tag1", "tag2"],
+            "tags": ["tag1", "tag2", "tag3"],
             "metadata": {
               "likes": "...",
               "stars": "${scrapedMetadata.stars || ''}",
@@ -181,7 +213,7 @@ export default async function handler(req, res) {
           content: contentHtml,
           image,
           videoEmbed: embedUrl, 
-          originalDescription: originalDescription,
+          originalDescription: fullDescription, // Return the deep-scraped full description
           date: new Date().toLocaleDateString(),
           ...aiData,
           usedModel: modelName
@@ -200,8 +232,8 @@ export default async function handler(req, res) {
 
     res.status(200).json({
       title,
-      summary: originalDescription || "No summary available.",
-      originalDescription: originalDescription,
+      summary: fullDescription.substring(0, 200) + "..." || "No summary available.",
+      originalDescription: fullDescription,
       content: contentHtml,
       image,
       category,
