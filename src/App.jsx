@@ -7,10 +7,8 @@ import {
   Trash2, 
   Tag, 
   Clock, 
-  Zap, 
   BookOpen, 
   X, 
-  MoreHorizontal,
   ChevronLeft,
   Type,
   Sun,
@@ -29,7 +27,7 @@ const App = () => {
     const saved = localStorage.getItem('things3-bookmarks');
     return saved ? JSON.parse(saved) : [];
   });
-  const [activeView, setActiveView] = useState('inbox'); // inbox, favorites, archive, specific-tag
+  const [activeView, setActiveView] = useState('inbox'); // inbox, favorites, archive
   const [isAdding, setIsAdding] = useState(false);
   const [newUrl, setNewUrl] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -246,11 +244,19 @@ const App = () => {
       
       {/* Sidebar - Things 3 Style */}
       <div className="w-64 flex-shrink-0 bg-[#f8f9fa] border-r border-gray-200 flex flex-col pt-8 pb-4">
-        <div className="px-5 mb-6">
+        <div className="px-5 mb-6 flex items-center justify-between">
            <h1 className="font-bold text-gray-800 flex items-center gap-2">
              <BookOpen className="text-blue-500" />
              ReadIt
            </h1>
+           {/* Added Sidebar Add Button */}
+           <button 
+             onClick={() => setIsAdding(true)} 
+             className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-all"
+             title="Add New Link"
+           >
+             <Plus size={20} />
+           </button>
         </div>
 
         <div className="px-3 flex-1 overflow-y-auto">
@@ -291,9 +297,6 @@ const App = () => {
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 capitalize">
             {activeView}
           </h2>
-          <div className="flex items-center gap-2">
-             {/* Action buttons could go here */}
-          </div>
         </div>
 
         {/* Scrollable List */}
@@ -360,7 +363,7 @@ const App = () => {
         </div>
 
         {/* Floating Add Button (Things 3 style) */}
-        <div className="absolute bottom-8 right-8">
+        <div className="absolute bottom-8 right-8 z-50">
            <button
              onClick={() => setIsAdding(true)}
              className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"
@@ -371,7 +374,7 @@ const App = () => {
 
         {/* Add Modal */}
         {isAdding && (
-          <div className="absolute inset-0 z-20 bg-white/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !isProcessing && setIsAdding(false)}>
+          <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !isProcessing && setIsAdding(false)}>
             <div 
               className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 p-6 transform transition-all scale-100"
               onClick={e => e.stopPropagation()}
