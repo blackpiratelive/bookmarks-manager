@@ -1,0 +1,29 @@
+{
+  "name": "things-3-bookmark-manager",
+  "version": "1.0.0",
+  "description": "A minimalist bookmark manager with AI tagging and a reader mode, built for Vercel deployment.",
+  "main": "api/fetch-article.js",
+  "scripts": {
+    "start": "echo 'This project is designed for Vercel deployment. Run locally using Vercel CLI: vercel dev'",
+    "deploy": "vercel",
+    "build": "echo 'No dedicated build script needed for a basic Vercel deployment with client-side React/Babel.'"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@mozilla/readability": "^0.4.4",
+    "jsdom": "^22.1.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.3.0"
+  },
+  "keywords": [
+    "vercel",
+    "react",
+    "serverless",
+    "ai",
+    "bookmark-manager"
+  ],
+  "author": "",
+  "license": "ISC"
+}
