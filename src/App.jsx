@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Inbox, 
@@ -22,43 +22,6 @@ import {
   ExternalLink,
   Sparkles
 } from 'lucide-react';
-
-// --- Utility: Simulated AI Analysis ---
-const simulateAIAnalysis = (url) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Mock data generation based on rudimentary string hashing for consistency
-      const hash = url.length;
-      const categories = ['Technology', 'Design', 'Science', 'Productivity', 'Finance'];
-      const difficulties = ['Easy', 'Medium', 'Advanced'];
-      const category = categories[hash % categories.length];
-      const readTime = Math.max(2, Math.floor(Math.random() * 15)) + ' min';
-      const difficulty = difficulties[hash % difficulties.length];
-      
-      resolve({
-        title: `Article about ${category} from ${new URL(url).hostname}`,
-        summary: "This is a simulated AI-generated summary. The content discusses the impact of modern trends on the subject matter, exploring various facets and offering a comprehensive overview of the current landscape. Key points include innovation, sustainability, and future projections.",
-        tags: [category.toLowerCase(), 'must-read', '2025', 'research'],
-        category: category,
-        readingTime: readTime,
-        difficulty: difficulty,
-        date: new Date().toLocaleDateString(),
-        content: `
-          <h2 class="text-2xl font-bold mb-4">The Future of ${category}</h2>
-          <p class="mb-4">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
-          <p class="mb-4">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-          <h3 class="text-xl font-bold mb-3">Key Takeaways</h3>
-          <p class="mb-4">Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
-          <p class="mb-4">Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet.</p>
-          <blockquote class="border-l-4 border-blue-500 pl-4 italic my-6 text-gray-600 dark:text-gray-400">
-            "Innovation distinguishes between a leader and a follower."
-          </blockquote>
-          <p class="mb-4">At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident.</p>
-        `
-      });
-    }, 1500);
-  });
-};
 
 const App = () => {
   // --- State ---
@@ -92,7 +55,17 @@ const App = () => {
 
     setIsProcessing(true);
     try {
-      const aiData = await simulateAIAnalysis(newUrl);
+      // CALL VERCEL FUNCTION
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: newUrl }),
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+      
+      const aiData = await response.json();
+      
       const newBookmark = {
         id: Date.now().toString(),
         url: newUrl,
@@ -105,6 +78,7 @@ const App = () => {
       setIsAdding(false);
     } catch (error) {
       console.error("Analysis failed", error);
+      alert("Failed to analyze URL. Please check the console or try a different link.");
     } finally {
       setIsProcessing(false);
     }
