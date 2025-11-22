@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Inbox, Star, Archive, Trash2, Tag, Clock, BookOpen, 
   X, ChevronLeft, ChevronRight, Type, Sun, Moon, Coffee, Check, Search, 
   Layout, ExternalLink, Sparkles, Settings, Key, Image as ImageIcon,
-  RefreshCw, Server, AlertCircle, MoreHorizontal,
-  Youtube, Code2, ShoppingBag, GraduationCap, FileText, ThumbsUp, GitFork, User, ShoppingCart
+  RefreshCw, Server, AlertCircle, MoreHorizontal, FolderInput, Menu,
+  Youtube, Code2, ShoppingBag, GraduationCap, FileText, ThumbsUp, GitFork, User, ShoppingCart,
+  Download, Upload
 } from 'lucide-react';
 
 const App = () => {
@@ -21,7 +22,8 @@ const App = () => {
   const [readerItem, setReaderItem] = useState(null); 
   const [searchTerm, setSearchTerm] = useState('');
   const [activeMenuId, setActiveMenuId] = useState(null);
-  
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // State for mobile sidebar
+
   // Settings State
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini-api-key') || '');
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('gemini-model') || 'gemini-1.5-flash');
@@ -32,6 +34,9 @@ const App = () => {
   // Reader/Carousel State
   const [readerSettings, setReaderSettings] = useState({ theme: 'white', font: 'sans', size: 18 });
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  // Helper ref for file input
+  const fileInputRef = useRef(null);
 
   // --- Effects ---
   useEffect(() => localStorage.setItem('things3-bookmarks', JSON.stringify(bookmarks)), [bookmarks]);
@@ -47,6 +52,12 @@ const App = () => {
   useEffect(() => {
     if (readerItem) setCurrentImageIndex(0); // Reset carousel when opening new item
   }, [readerItem]);
+
+  // Close sidebar on view change on mobile
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [activeView]);
+
 
   // --- Actions ---
   const fetchModels = async () => {
@@ -120,6 +131,65 @@ const App = () => {
     }
   };
 
+  // --- Import / Export Handlers ---
+  const handleExport = () => {
+    const data = {
+      bookmarks,
+      settings: {
+        apiKey,
+        selectedModel
+      },
+      exportDate: new Date().toISOString(),
+      version: 1
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `readit-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedData = JSON.parse(event.target.result);
+        
+        // Validate structure
+        if (!importedData.bookmarks || !Array.isArray(importedData.bookmarks)) {
+          throw new Error("Invalid backup file format.");
+        }
+
+        if (confirm(`Restore ${importedData.bookmarks.length} bookmarks and settings? This will overwrite current data.`)) {
+          setBookmarks(importedData.bookmarks);
+          
+          if (importedData.settings) {
+            if (importedData.settings.apiKey) setApiKey(importedData.settings.apiKey);
+            if (importedData.settings.selectedModel) setSelectedModel(importedData.settings.selectedModel);
+          }
+          
+          alert("Import successful!");
+        }
+      } catch (err) {
+        alert("Failed to import: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null; // Reset so same file can be selected again
+  };
+
   const toggleFavorite = (id, e) => {
     e.stopPropagation();
     setBookmarks(bookmarks.map(b => b.id === id ? { ...b, isFavorite: !b.isFavorite } : b));
@@ -162,7 +232,11 @@ const App = () => {
     <div className="absolute right-0 top-8 bg-white rounded-lg shadow-xl border border-gray-100 py-1 w-40 z-20 animate-in fade-in slide-in-from-top-2 duration-200">
       <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-50 mb-1">Move to...</div>
       {['Videos', 'Coding', 'Articles', 'Research', 'Shopping'].map(cat => (
-        <button key={cat} onClick={(e) => changeCategory(bookmark.id, cat, e)} className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${bookmark.category === cat ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}>
+        <button
+          key={cat}
+          onClick={(e) => changeCategory(bookmark.id, cat, e)}
+          className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${bookmark.category === cat ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}
+        >
           {cat === 'Videos' && <Youtube size={14} />}
           {cat === 'Coding' && <Code2 size={14} />}
           {cat === 'Shopping' && <ShoppingBag size={14} />}
@@ -176,12 +250,23 @@ const App = () => {
 
   const CardActions = ({ bookmark }) => (
     <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 p-1 rounded-lg backdrop-blur z-10" onClick={e => e.stopPropagation()}>
-      <button onClick={(e) => toggleFavorite(bookmark.id, e)} className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${bookmark.isFavorite ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}><Star size={16} fill={bookmark.isFavorite ? "currentColor" : "none"} /></button>
+      <button onClick={(e) => toggleFavorite(bookmark.id, e)} className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${bookmark.isFavorite ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}>
+        <Star size={16} fill={bookmark.isFavorite ? "currentColor" : "none"} />
+      </button>
+      
       <div className="relative">
-        <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === bookmark.id ? null : bookmark.id); }} className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${activeMenuId === bookmark.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-900'}`}><MoreHorizontal size={16} /></button>
+        <button 
+          onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === bookmark.id ? null : bookmark.id); }}
+          className={`p-1.5 hover:bg-gray-100 rounded transition-colors ${activeMenuId === bookmark.id ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-900'}`}
+        >
+          <MoreHorizontal size={16} />
+        </button>
         {activeMenuId === bookmark.id && <CategoryMenu bookmark={bookmark} />}
       </div>
-      <button onClick={(e) => deleteBookmark(bookmark.id, e)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+
+      <button onClick={(e) => deleteBookmark(bookmark.id, e)} className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500">
+        <Trash2 size={16} />
+      </button>
     </div>
   );
 
@@ -206,7 +291,10 @@ const App = () => {
       <div className="flex items-start justify-between mb-3">
          <div className="flex items-center gap-3">
             <div className="p-2 bg-gray-100 rounded-md border border-gray-200"><Code2 size={24} className="text-gray-700" /></div>
-            <div><h3 className="font-bold text-gray-900 text-lg leading-tight line-clamp-1">{item.title}</h3>{item.metadata?.author && <span className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><User size={10}/> {item.metadata.author}</span>}</div>
+            <div>
+              <h3 className="font-bold text-gray-900 text-lg leading-tight line-clamp-1">{item.title}</h3>
+              {item.metadata?.author && <span className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><User size={10}/> {item.metadata.author}</span>}
+            </div>
          </div>
       </div>
       <p className="text-sm text-gray-600 mb-4 flex-1 line-clamp-3">{item.summary}</p>
@@ -251,6 +339,29 @@ const App = () => {
     </div>
   );
 
+  // --- Sidebar Content ---
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="px-5 mb-6 flex items-center justify-between">
+          <h1 className="font-bold text-gray-800 flex items-center gap-2"><BookOpen className="text-blue-500" /> ReadIt</h1>
+          <button onClick={() => setIsAdding(true)} className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-all"><Plus size={20} /></button>
+      </div>
+      <div className="px-3 flex-1 overflow-y-auto">
+        <NavItem id="inbox" icon={Inbox} label="Inbox" count={bookmarks.filter(b => !b.isArchived).length} />
+        <NavItem id="favorites" icon={Star} label="Favorites" count={bookmarks.filter(b => b.isFavorite && !b.isArchived).length} />
+        <NavItem id="archive" icon={Archive} label="Logbook" count={bookmarks.filter(b => b.isArchived).length} />
+        <div className="mt-8 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Library</div>
+        <NavItem id="videos" icon={Youtube} label="Videos" count={bookmarks.filter(b => b.category === 'Videos' && !b.isArchived).length} />
+        <NavItem id="coding" icon={Code2} label="Coding" count={bookmarks.filter(b => b.category === 'Coding' && !b.isArchived).length} />
+        <NavItem id="articles" icon={FileText} label="Articles" count={bookmarks.filter(b => b.category === 'Articles' && !b.isArchived).length} />
+        <NavItem id="research" icon={GraduationCap} label="Research" count={bookmarks.filter(b => b.category === 'Research' && !b.isArchived).length} />
+        <NavItem id="shopping" icon={ShoppingBag} label="Shopping" count={bookmarks.filter(b => b.category === 'Shopping' && !b.isArchived).length} />
+      </div>
+      <div className="px-3 mt-auto mb-2"><NavItem id="settings" icon={Settings} label="Settings" count={0} /></div>
+    </div>
+  );
+
+  // Reusable NavItem for Sidebar
   const NavItem = ({ id, icon: Icon, label, count }) => (
     <button onClick={() => setActiveView(id)} className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${activeView === id ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'}`}>
       <div className="flex items-center gap-3"><Icon size={18} className={activeView === id ? 'text-blue-500' : 'text-gray-400'} /><span>{label}</span></div>
@@ -259,44 +370,40 @@ const App = () => {
   );
 
   return (
-    <div className="flex h-screen w-full bg-[#fcfcfc] text-gray-800 font-sans">
+    <div className="flex h-screen w-full bg-[#fcfcfc] text-gray-800 font-sans overflow-hidden">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/20 z-40 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+      )}
+      
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 bg-[#f8f9fa] border-r border-gray-200 flex flex-col pt-8 pb-4">
-        <div className="px-5 mb-6 flex items-center justify-between">
-           <h1 className="font-bold text-gray-800 flex items-center gap-2"><BookOpen className="text-blue-500" /> ReadIt</h1>
-           <button onClick={() => setIsAdding(true)} className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-all"><Plus size={20} /></button>
-        </div>
-        <div className="px-3 flex-1 overflow-y-auto">
-          <NavItem id="inbox" icon={Inbox} label="Inbox" count={bookmarks.filter(b => !b.isArchived).length} />
-          <NavItem id="favorites" icon={Star} label="Favorites" count={bookmarks.filter(b => b.isFavorite && !b.isArchived).length} />
-          <NavItem id="archive" icon={Archive} label="Logbook" count={bookmarks.filter(b => b.isArchived).length} />
-          <div className="mt-8 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Library</div>
-          <NavItem id="videos" icon={Youtube} label="Videos" count={bookmarks.filter(b => b.category === 'Videos' && !b.isArchived).length} />
-          <NavItem id="coding" icon={Code2} label="Coding" count={bookmarks.filter(b => b.category === 'Coding' && !b.isArchived).length} />
-          <NavItem id="articles" icon={FileText} label="Articles" count={bookmarks.filter(b => b.category === 'Articles' && !b.isArchived).length} />
-          <NavItem id="research" icon={GraduationCap} label="Research" count={bookmarks.filter(b => b.category === 'Research' && !b.isArchived).length} />
-          <NavItem id="shopping" icon={ShoppingBag} label="Shopping" count={bookmarks.filter(b => b.category === 'Shopping' && !b.isArchived).length} />
-        </div>
-        <div className="px-3 mt-auto mb-2"><NavItem id="settings" icon={Settings} label="Settings" count={0} /></div>
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#f8f9fa] border-r border-gray-200 pt-8 pb-4 transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <SidebarContent />
       </div>
 
       {/* Main Area */}
-      <div className="flex-1 flex flex-col h-full bg-white relative">
-        <div className="h-16 flex items-center justify-between px-8 border-b border-gray-50 bg-white/80 backdrop-blur sticky top-0 z-10">
-          <h2 className="text-2xl font-bold tracking-tight text-gray-900 capitalize">{activeView}</h2>
+      <div className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
+        <div className="h-16 flex items-center justify-between px-4 sm:px-8 border-b border-gray-50 bg-white/80 backdrop-blur sticky top-0 z-10">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-1 -ml-1 text-gray-500 hover:bg-gray-100 rounded-lg">
+              <Menu size={24} />
+            </button>
+            <h2 className="text-2xl font-bold tracking-tight text-gray-900 capitalize">{activeView}</h2>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6">
           {activeView === 'settings' ? (
             /* Settings View */
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
+            <div className="max-w-2xl mx-auto space-y-6">
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Key size={24} /></div>
                   <div><h3 className="text-lg font-bold text-gray-900">API Configuration</h3><p className="text-gray-500 text-sm">Manage your Gemini API key</p></div>
                 </div>
                 <div className="space-y-4">
                   <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-50 outline-none transition-all font-mono text-sm" />
+                  <p className="text-xs text-gray-400">Stored locally in your browser.</p>
                 </div>
               </div>
 
@@ -321,12 +428,37 @@ const App = () => {
                   </div>
                 )}
               </div>
+
+              {/* Data Management Section */}
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-3 bg-green-50 text-green-600 rounded-lg"><FolderInput size={24} /></div>
+                  <div><h3 className="text-lg font-bold text-gray-900">Data Management</h3><p className="text-gray-500 text-sm">Export or import your bookmarks and settings</p></div>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors">
+                    <Download size={18} /> Export Data
+                  </button>
+                  
+                  <button onClick={handleImportClick} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors">
+                    <Upload size={18} /> Import Data
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleFileChange} 
+                    accept=".json" 
+                    className="hidden" 
+                  />
+                </div>
+              </div>
             </div>
           ) : (
             /* Bookmarks Grid */
             <div className={activeView === 'videos' || activeView === 'coding' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6" : "space-y-4 pb-20"}>
               {displayBookmarks.map(bookmark => (
-                <div key={bookmark.id} onClick={() => setReaderItem(bookmark)} className="group relative bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer ring-1 ring-transparent hover:ring-blue-100 hover:border-blue-200">
+                <div key={bookmark.id} onClick={() => setReaderItem(bookmark)} className="group relative bg-white rounded-xl border border-gray-100 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer ring-1 ring-transparent hover:ring-blue-100 hover:border-blue-200">
                    <CardActions bookmark={bookmark} />
                    {bookmark.category === 'Videos' ? renderVideoCard(bookmark) : bookmark.category === 'Coding' ? renderCodingCard(bookmark) : bookmark.category === 'Shopping' ? renderShoppingCard(bookmark) : renderStandardCard(bookmark)}
                 </div>
@@ -336,8 +468,8 @@ const App = () => {
         </div>
         
         {activeView !== 'settings' && (
-          <div className="absolute bottom-8 right-8 z-50">
-             <button onClick={() => setIsAdding(true)} className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"><Plus size={28} /></button>
+          <div className="absolute bottom-8 right-4 sm:right-8 z-50">
+             <button onClick={() => setIsAdding(true)} className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-3 sm:p-4 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"><Plus size={24} className="sm:w-7 sm:h-7" /></button>
           </div>
         )}
         
@@ -355,7 +487,7 @@ const App = () => {
         {readerItem && (
           <div className={`fixed inset-0 z-50 overflow-y-auto transition-colors duration-300 ${readerSettings.theme === 'dark' ? 'bg-gray-900 text-gray-300' : readerSettings.theme === 'sepia' ? 'bg-[#f8f1e3] text-[#4f321c]' : 'bg-white text-gray-900'}`}>
             {/* Header */}
-            <div className={`sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b transition-colors ${readerSettings.theme === 'dark' ? 'border-gray-800 bg-gray-900/95' : 'border-gray-100 bg-white/95'} backdrop-blur-sm`}>
+            <div className={`sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-4 border-b transition-colors ${readerSettings.theme === 'dark' ? 'border-gray-800 bg-gray-900/95' : 'border-gray-100 bg-white/95'} backdrop-blur-sm`}>
               <button onClick={() => setReaderItem(null)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-black/5 transition-colors"><ChevronLeft size={20} /> <span className="font-medium">Back</span></button>
               {readerItem.category !== 'Videos' && readerItem.category !== 'Shopping' && (
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5">
@@ -372,7 +504,7 @@ const App = () => {
             </div>
 
             {/* Content Layouts */}
-            <div className="max-w-3xl mx-auto px-6 py-12">
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
               {readerItem.category === 'Shopping' ? (
                 /* --- SHOPPING LAYOUT --- */
                 <div className="space-y-8">
@@ -402,9 +534,9 @@ const App = () => {
                   
                   {/* Product Info */}
                   <div>
-                    <div className="flex justify-between items-start mb-4">
-                      <h1 className="text-3xl font-bold leading-tight text-gray-900">{readerItem.title}</h1>
-                      {readerItem.metadata?.price && <span className="text-3xl font-bold text-green-600 bg-green-50 px-4 py-2 rounded-lg">{readerItem.metadata.price}</span>}
+                    <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-2">
+                      <h1 className="text-2xl sm:text-3xl font-bold leading-tight text-gray-900">{readerItem.title}</h1>
+                      {readerItem.metadata?.price && <span className="text-2xl sm:text-3xl font-bold text-green-600 bg-green-50 px-4 py-2 rounded-lg whitespace-nowrap">{readerItem.metadata.price}</span>}
                     </div>
                     <a href={readerItem.url} target="_blank" rel="noreferrer" className="inline-block w-full text-center bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors mb-8">
                       Visit Store <ExternalLink size={16} className="inline ml-2"/>
@@ -417,8 +549,8 @@ const App = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-8 text-sm">
                           {Object.entries(readerItem.specifications).map(([key, val]) => (
                             <div key={key} className="flex border-b border-gray-100 py-2">
-                              <span className="font-medium text-gray-500 w-1/3">{key}</span>
-                              <span className="text-gray-900 w-2/3">{val}</span>
+                              <span className="font-medium text-gray-500 w-1/3 break-words pr-2">{key}</span>
+                              <span className="text-gray-900 w-2/3 break-words">{val}</span>
                             </div>
                           ))}
                         </div>
@@ -439,7 +571,7 @@ const App = () => {
                     {readerItem.videoEmbed ? <iframe src={readerItem.videoEmbed} title={readerItem.title} className="w-full h-full" allowFullScreen frameBorder="0" /> : <div className="flex items-center justify-center h-full text-gray-500">Video not embeddable</div>}
                   </div>
                   <div className="space-y-6">
-                    <h1 className="text-3xl font-bold leading-tight">{readerItem.title}</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{readerItem.title}</h1>
                     <div className="flex items-center gap-6 text-sm opacity-70">
                       {readerItem.metadata?.platform && <span className="flex items-center gap-2 font-medium text-red-500"><Youtube size={18} /> {readerItem.metadata.platform}</span>}
                       {readerItem.metadata?.likes && <span>{readerItem.metadata.likes} likes</span>}
@@ -459,7 +591,7 @@ const App = () => {
                 /* --- STANDARD LAYOUT --- */
                 <div style={{ fontSize: `${readerSettings.size}px`, lineHeight: '1.8' }} className={readerSettings.font === 'serif' ? 'font-serif' : readerSettings.font === 'mono' ? 'font-mono' : 'font-sans'}>
                     <div className="mb-12 border-b border-black/10 pb-8">
-                      <h1 className="text-4xl font-bold mb-4 leading-tight">{readerItem.title}</h1>
+                      <h1 className="text-3xl sm:text-4xl font-bold mb-4 leading-tight">{readerItem.title}</h1>
                       <div className="flex flex-wrap items-center gap-4 text-base opacity-60 mb-6">
                          <span className="flex items-center gap-1"><ExternalLink size={16}/> {new URL(readerItem.url).hostname}</span>
                          <span className="flex items-center gap-1"><Clock size={16}/> {readerItem.readingTime} read</span>

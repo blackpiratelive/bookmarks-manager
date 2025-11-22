@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     const baseUrl = new URL(fullUrl);
     const isYoutube = fullUrl.includes('youtube.com') || fullUrl.includes('youtu.be');
     const isGithub = fullUrl.includes('github.com');
+    const isAmazon = fullUrl.includes('amazon') || fullUrl.includes('amzn');
     
     // --- 1. YouTube oEmbed (Base Metadata) ---
     let youtubeData = {};
@@ -71,7 +72,7 @@ export default async function handler(req, res) {
 
     // --- 4. DIRECT METADATA & IMAGE SCRAPING ---
     let scrapedMetadata = {};
-    let productImages = [];
+    let productImagesSet = new Set(); // Use Set to avoid duplicates
     
     // Fix Relative URLs & Collect Images
     $('img').each((i, el) => {
@@ -79,15 +80,21 @@ export default async function handler(req, res) {
       const realSrc = $el.attr('data-src') || $el.attr('data-original') || $el.attr('src');
       if (realSrc && !realSrc.startsWith('data:')) {
         try {
-          const absUrl = new URL(realSrc, baseUrl).href;
+          let absUrl = new URL(realSrc, baseUrl).href;
+          
+          // --- AMAZON SPECIFIC IMAGE CLEANING ---
+          // Removes resizing params like ._AC_US40_ to get the original High-Res image
+          // Pattern: /images/I/XXXXX._modifiers_.jpg -> /images/I/XXXXX.jpg
+          if (absUrl.includes('/images/I/')) {
+             absUrl = absUrl.replace(/\._.*(\.[a-zA-Z]+)$/, '$1');
+          }
+
           $el.attr('src', absUrl);
           $el.removeAttr('srcset');
           
-          // Heuristic: Collect large images for potential product carousel
-          // We ignore small icons based on attribute keywords or if we could check dimensions (not possible in static HTML easily)
-          if (!absUrl.includes('icon') && !absUrl.includes('logo') && !absUrl.includes('avatar')) {
-             // Prioritize likely product images
-             if (productImages.length < 5) productImages.push(absUrl);
+          // Collect large images for carousel
+          if (!absUrl.includes('icon') && !absUrl.includes('logo') && !absUrl.includes('avatar') && !absUrl.includes('gif')) {
+             productImagesSet.add(absUrl);
           }
         } catch (e) {}
       }
@@ -98,11 +105,21 @@ export default async function handler(req, res) {
     
     const title = youtubeData.title || $('meta[property="og:title"]').attr('content') || $('title').first().text().trim() || url;
     let image = youtubeData.thumbnail_url || $('meta[property="og:image"]').attr('content') || "";
-    if (image && !image.startsWith('http')) try { image = new URL(image, baseUrl).href; } catch(e) {}
     
-    // Ensure the main og:image is first in the product images list
+    // Ensure main image is cleaned too if it's Amazon
+    if (image && image.includes('/images/I/')) {
+       image = image.replace(/\._.*(\.[a-zA-Z]+)$/, '$1');
+    } else if (image && !image.startsWith('http')) {
+       try { image = new URL(image, baseUrl).href; } catch(e) {}
+    }
+    
+    // prioritize the main OG image in the carousel
+    const productImages = Array.from(productImagesSet);
     if (image) {
-      productImages = [image, ...productImages.filter(img => img !== image)].slice(0, 6);
+       // Move main image to front if exists, or add it
+       const idx = productImages.indexOf(image);
+       if (idx > -1) productImages.splice(idx, 1);
+       productImages.unshift(image);
     }
 
     // Specific Scraping Logic
@@ -122,7 +139,7 @@ export default async function handler(req, res) {
       scrapedMetadata.platform = 'YouTube';
     }
     // Shopping Price
-    const priceSelectors = ['.a-price .a-offscreen', '.price', '[itemprop="price"]', '#priceblock_ourprice', '.product-price'];
+    const priceSelectors = ['.a-price .a-offscreen', '.price', '[itemprop="price"]', '#priceblock_ourprice', '.product-price', '.offer-price', '.price-box__price'];
     for (const sel of priceSelectors) {
       const price = $(sel).first().text().trim();
       if (price) {
@@ -131,7 +148,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Embed URL
     let embedUrl = null;
     if (isYoutube) {
       const match = fullUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^#&?]*)/);
@@ -157,8 +173,8 @@ export default async function handler(req, res) {
         if (isYoutube) {
            contextData = `VIDEO_TITLE: ${title}\nVIDEO_DESCRIPTION: "${fullDescription.substring(0, 15000)}"`;
         } else {
-           const bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
-           contextData = `WEBPAGE_TEXT: "${bodyText.substring(0, 12000)}..."`;
+           const bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 20000); // Increased limit
+           contextData = `WEBPAGE_TEXT: "${bodyText}..."`;
         }
 
         const prompt = `
@@ -170,7 +186,10 @@ export default async function handler(req, res) {
           Task:
           1. Categorize (Videos, Coding, Shopping, Research, Articles).
           2. Generate a Comprehensive Summary (80-100 words).
-          3. If category is 'Shopping', extract 'specifications' (key-value pairs like Material, Weight, Dimensions).
+          3. If category is 'Shopping':
+             - Extract ALL 'Product Information', 'Technical Details', or 'Specifications' found in the text.
+             - Return them as a comprehensive key-value object in 'specifications'.
+             - Do not summarize or omit rows; if it looks like a spec, include it.
           
           Return JSON:
           {
@@ -179,7 +198,7 @@ export default async function handler(req, res) {
             "difficulty": "Easy | Medium | Advanced",
             "readingTime": "e.g. '5 min'",
             "tags": ["tag1", "tag2"],
-            "specifications": { "Key": "Value", "Key2": "Value2" }, 
+            "specifications": { "Material": "Value", "Weight": "Value", "Dimensions": "Value", ... }, 
             "metadata": {
               "likes": "...",
               "stars": "${scrapedMetadata.stars || ''}",
@@ -203,11 +222,14 @@ export default async function handler(req, res) {
           aiData = JSON.parse(jsonMatch[0]);
         }
 
+        // Limit image count to avoid payload bloat, but keep high quality ones
+        const finalImages = productImages.slice(0, 8);
+
         return res.status(200).json({
           title,
           content: contentHtml,
           image,
-          images: productImages, // Send all scraped images
+          images: finalImages,
           videoEmbed: embedUrl, 
           originalDescription: fullDescription,
           date: new Date().toLocaleDateString(),
@@ -232,7 +254,7 @@ export default async function handler(req, res) {
       originalDescription: fullDescription,
       content: contentHtml,
       image,
-      images: productImages,
+      images: productImages.slice(0, 8),
       category,
       readingTime: "5 min",
       difficulty: "Medium",
