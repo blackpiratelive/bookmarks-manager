@@ -4,7 +4,7 @@ import {
   X, ChevronLeft, Type, Sun, Moon, Coffee, Check, Search, 
   Layout, ExternalLink, Sparkles, Settings, Key, Image as ImageIcon,
   RefreshCw, Server, AlertCircle, 
-  Youtube, Code2, ShoppingBag, GraduationCap, FileText, ThumbsUp, GitFork, GitBranch, User
+  Youtube, Code2, ShoppingBag, GraduationCap, FileText, ThumbsUp, GitFork, User
 } from 'lucide-react';
 
 const App = () => {
@@ -152,7 +152,7 @@ const App = () => {
   // --- Renderers for Different Categories ---
 
   const renderVideoCard = (item) => (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 h-full">
        {/* Embed Video if available */}
        {item.videoEmbed ? (
          <div className="w-full aspect-video rounded-lg overflow-hidden bg-black shadow-inner">
@@ -165,23 +165,28 @@ const App = () => {
            />
          </div>
        ) : (
-         <div className="w-full h-48 bg-gray-900 rounded-lg flex items-center justify-center text-gray-500">
-           {item.image ? <img src={item.image} className="w-full h-full object-cover rounded-lg" /> : <Youtube size={48} />}
+         <div className="w-full h-48 bg-gray-900 rounded-lg flex items-center justify-center text-gray-500 relative overflow-hidden">
+            {item.image ? <img src={item.image} className="w-full h-full object-cover opacity-80" /> : <Youtube size={48} />}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+               <div className="bg-white/20 backdrop-blur-sm p-3 rounded-full border border-white/50">
+                 <Youtube size={32} className="text-white fill-current" />
+               </div>
+            </div>
          </div>
        )}
        
-       <div>
+       <div className="flex flex-col flex-1">
          <div className="flex items-start justify-between mb-2">
-           <h3 className="text-lg font-bold text-gray-900 line-clamp-2 leading-tight">{item.title}</h3>
+           <h3 className="text-lg font-bold text-gray-900 line-clamp-2 leading-tight hover:text-blue-600">{item.title}</h3>
          </div>
          
          <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
             {item.metadata?.platform && <span className="flex items-center gap-1 text-red-600 font-medium"><Youtube size={14} /> {item.metadata.platform}</span>}
-            {item.metadata?.likes && <span className="flex items-center gap-1"><ThumbsUp size={14} /> {item.metadata.likes} likes</span>}
+            {item.metadata?.likes && <span className="flex items-center gap-1"><ThumbsUp size={14} /> {item.metadata.likes}</span>}
             <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-xs font-bold">AI Summary</span>
          </div>
 
-         <p className="text-gray-600 text-sm leading-relaxed">{item.summary}</p>
+         <p className="text-gray-600 text-sm leading-relaxed flex-1">{item.summary}</p>
        </div>
     </div>
   );
@@ -189,18 +194,20 @@ const App = () => {
   const renderCodingCard = (item) => (
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between mb-3">
-         <div className="flex items-center gap-2">
-            <div className="p-2 bg-gray-100 rounded-md"><Code2 size={20} className="text-gray-700" /></div>
+         <div className="flex items-center gap-3">
+            <div className="p-2 bg-gray-100 rounded-md border border-gray-200">
+                <Code2 size={24} className="text-gray-700" />
+            </div>
             <div>
-              <h3 className="font-bold text-gray-900 text-lg leading-none">{item.title}</h3>
-              {item.metadata?.author && <span className="text-xs text-gray-500 flex items-center gap-1 mt-1"><User size={10}/> {item.metadata.author}</span>}
+              <h3 className="font-bold text-gray-900 text-lg leading-tight line-clamp-1">{item.title}</h3>
+              {item.metadata?.author && <span className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><User size={10}/> {item.metadata.author}</span>}
             </div>
          </div>
       </div>
 
-      <p className="text-sm text-gray-600 mb-4 flex-1">{item.summary}</p>
+      <p className="text-sm text-gray-600 mb-4 flex-1 line-clamp-3">{item.summary}</p>
 
-      <div className="flex items-center gap-4 py-3 px-4 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+      <div className="flex items-center gap-4 py-3 px-4 bg-gray-50 rounded-lg border border-gray-100 text-sm mt-auto">
          <div className="flex items-center gap-1.5 font-medium text-gray-700">
             <Star size={16} className="text-yellow-500 fill-yellow-500" />
             {item.metadata?.stars || '0'}
@@ -209,7 +216,7 @@ const App = () => {
             <GitFork size={16} className="text-gray-400" />
             {item.metadata?.forks || '0'}
          </div>
-         <div className="ml-auto text-xs text-gray-400 bg-white px-2 py-1 rounded border border-gray-200">
+         <div className="ml-auto text-xs text-gray-500 font-mono bg-white px-2 py-1 rounded border border-gray-200 shadow-sm">
             {item.metadata?.platform || 'GitHub'}
          </div>
       </div>
@@ -217,37 +224,37 @@ const App = () => {
   );
 
   const renderShoppingCard = (item) => (
-    <div className="flex gap-4">
-      <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 flex items-center justify-center">
+    <div className="flex gap-4 h-full">
+      <div className="w-28 h-32 flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 flex items-center justify-center">
          {item.image ? <img src={item.image} className="max-w-full max-h-full object-contain" /> : <ShoppingBag className="text-gray-300" />}
       </div>
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col">
          <div className="flex justify-between items-start">
-            <h3 className="font-bold text-gray-900 text-lg line-clamp-1">{item.title}</h3>
+            <h3 className="font-bold text-gray-900 text-lg line-clamp-2 leading-tight">{item.title}</h3>
             {item.metadata?.price && (
-              <span className="bg-green-100 text-green-700 font-bold px-2 py-1 rounded text-sm">
+              <span className="ml-2 bg-green-100 text-green-700 font-bold px-2.5 py-1 rounded-md text-sm whitespace-nowrap shadow-sm">
                 {item.metadata.price}
               </span>
             )}
          </div>
-         <p className="text-sm text-gray-500 mt-1 mb-3 line-clamp-2">{item.summary}</p>
-         <div className="flex flex-wrap gap-2">
-            {item.tags.map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{t}</span>)}
+         <p className="text-sm text-gray-500 mt-2 mb-3 line-clamp-2 flex-1">{item.summary}</p>
+         <div className="flex flex-wrap gap-2 mt-auto">
+            {item.tags.slice(0,3).map(t => <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200">{t}</span>)}
          </div>
       </div>
     </div>
   );
 
   const renderStandardCard = (item) => (
-    <div className="flex gap-4">
-      <div className="flex-1">
+    <div className="flex gap-4 h-full">
+      <div className="flex-1 flex flex-col">
         <h3 className="font-semibold text-lg text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
           {item.title}
         </h3>
-        <p className="text-gray-500 text-sm mb-4 line-clamp-2 leading-relaxed mt-1">
+        <p className="text-gray-500 text-sm mb-4 line-clamp-2 leading-relaxed mt-1 flex-1">
           {item.summary}
         </p>
-        <div className="flex items-center gap-4 text-xs font-medium text-gray-400">
+        <div className="flex items-center gap-4 text-xs font-medium text-gray-400 mt-auto">
             <span className={`px-2 py-0.5 rounded-full bg-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-50 text-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-600 border border-${item.difficulty === 'Easy' ? 'green' : item.difficulty === 'Medium' ? 'yellow' : 'red'}-100`}>
               {item.difficulty}
             </span>
@@ -255,19 +262,19 @@ const App = () => {
               <Clock size={12} /> {item.readingTime}
             </span>
             <span className="flex items-center gap-1">
-              <Tag size={12} /> {item.tags.join(', ')}
+              <Tag size={12} /> {item.tags.slice(0, 2).join(', ')}
             </span>
         </div>
       </div>
       {item.image && (
-        <div className="hidden sm:block w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200">
+        <div className="hidden sm:block w-24 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200 shadow-sm">
            <img src={item.image} className="w-full h-full object-cover" alt="" onError={(e) => e.target.style.display = 'none'} />
         </div>
       )}
     </div>
   );
 
-  // 1. Sidebar Item
+  // Sidebar Item
   const NavItem = ({ id, icon: Icon, label, count }) => (
     <button
       onClick={() => setActiveView(id)}
@@ -314,20 +321,61 @@ const App = () => {
 
         <div className="flex-1 overflow-y-auto px-8 py-6">
           {activeView === 'settings' ? (
-            // ... Settings View (Same as before but ensuring imports work) ...
+            // --- Rich Settings View ---
             <div className="max-w-2xl mx-auto">
               <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
-                 {/* Settings content remains similar, focusing on API key/models */}
-                 <h3 className="text-lg font-bold mb-4">API Settings</h3>
-                 <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Gemini API Key" className="w-full px-4 py-2 border rounded mb-4"/>
-                 <button onClick={fetchModels} className="bg-gray-100 px-4 py-2 rounded text-sm hover:bg-gray-200">Load Models</button>
-                 {availableModels.length > 0 && (
-                   <div className="mt-4 max-h-40 overflow-y-auto border rounded">
-                     {availableModels.map(m => (
-                       <div key={m.name} onClick={() => setSelectedModel(m.name)} className={`p-2 text-sm cursor-pointer hover:bg-blue-50 ${selectedModel === m.name ? 'bg-blue-100' : ''}`}>{m.displayName}</div>
-                     ))}
-                   </div>
-                 )}
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Key size={24} /></div>
+                  <div><h3 className="text-lg font-bold text-gray-900">API Configuration</h3><p className="text-gray-500 text-sm">Manage your Gemini API key</p></div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Gemini API Key</label>
+                    <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIzaSy..." className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-50 outline-none transition-all font-mono text-sm" />
+                    <p className="mt-2 text-xs text-gray-400">Stored locally in your browser.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-purple-50 text-purple-600 rounded-lg"><Server size={24} /></div>
+                    <div><h3 className="text-lg font-bold text-gray-900">AI Model</h3><p className="text-gray-500 text-sm">Select which model to use</p></div>
+                  </div>
+                  <button onClick={fetchModels} disabled={!apiKey || isLoadingModels} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium">
+                    <RefreshCw size={14} className={isLoadingModels ? "animate-spin" : ""} /> {isLoadingModels ? "Loading..." : "Load Models"}
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {availableModels.length > 0 ? (
+                    <>
+                      <div className="relative">
+                        <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
+                        <input type="text" placeholder="Search models (e.g., 'flash', 'pro')..." value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:border-purple-500 outline-none" />
+                      </div>
+                      <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                        {availableModels
+                          .filter(m => m.name.toLowerCase().includes(modelSearch.toLowerCase()))
+                          .map(model => (
+                            <button key={model.name} onClick={() => setSelectedModel(model.name)} className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between group ${selectedModel === model.name ? 'bg-purple-50' : ''}`}>
+                              <div>
+                                <div className={`font-medium text-sm ${selectedModel === model.name ? 'text-purple-700' : 'text-gray-900'}`}>{model.displayName || model.name}</div>
+                                <div className="text-xs text-gray-500 mt-0.5">{model.name}</div>
+                              </div>
+                              {selectedModel === model.name && <Check size={16} className="text-purple-600" />}
+                            </button>
+                          ))}
+                      </div>
+                    </>
+                  ) : (
+                     <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                       <p className="text-gray-500 text-sm">Click "Load Models" to fetch available models associated with your API key.</p>
+                       <div className="mt-4 p-2 bg-white inline-block rounded border border-gray-200 text-xs font-mono">Current: {selectedModel}</div>
+                     </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (
@@ -356,7 +404,7 @@ const App = () => {
           )}
         </div>
         
-        {/* Floating Add & Modals (Same as before) */}
+        {/* Floating Add & Modals */}
         {activeView !== 'settings' && (
           <div className="absolute bottom-8 right-8 z-50">
              <button onClick={() => setIsAdding(true)} className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"><Plus size={28} /></button>
@@ -366,23 +414,109 @@ const App = () => {
         {isAdding && (
            <div className="absolute inset-0 z-[60] bg-white/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !isProcessing && setIsAdding(false)}>
              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-100 p-6" onClick={e => e.stopPropagation()}>
-                <h3 className="text-xl font-bold mb-4">Add Link</h3>
-                <input autoFocus type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="Paste URL here..." className="w-full text-lg border-b-2 py-2 outline-none focus:border-blue-500" onKeyDown={e => e.key === 'Enter' && handleAddBookmark(e)} />
-                {isProcessing && <div className="mt-4 text-blue-500 flex items-center gap-2"><Sparkles size={16} className="animate-spin"/> {processingStatus}</div>}
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-800">New Bookmark</h3>
+                  {!isProcessing && <button onClick={() => setIsAdding(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>}
+                </div>
+                <div className="space-y-4">
+                  <input autoFocus type="url" value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="Paste URL here..." className="w-full text-lg border-b-2 py-2 outline-none focus:border-blue-500 bg-transparent" onKeyDown={e => e.key === 'Enter' && handleAddBookmark(e)} />
+                  {isProcessing ? (
+                    <div className="py-8 flex flex-col items-center justify-center text-blue-500">
+                      <div className="animate-spin mb-3"><Sparkles size={24} /></div>
+                      <span className="text-sm font-medium animate-pulse">{processingStatus}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-end pt-4">
+                       <button onClick={handleAddBookmark} disabled={!newUrl} className="bg-blue-500 text-white px-6 py-2 rounded-full font-medium shadow-md hover:bg-blue-600 disabled:opacity-50 transition-all">Save to Inbox</button>
+                    </div>
+                  )}
+                </div>
              </div>
            </div>
         )}
 
-        {/* Reader View (Simplified for brevity, logic exists in previous App.jsx) */}
+        {/* --- RICH READER MODE (Restored Features) --- */}
         {readerItem && (
-          <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
-            <div className="sticky top-0 flex justify-between items-center p-4 bg-white/95 border-b backdrop-blur">
-               <button onClick={() => setReaderItem(null)} className="flex items-center gap-2"><ChevronLeft/> Back</button>
+          <div className={`fixed inset-0 z-50 overflow-y-auto transition-colors duration-300 ${
+            readerSettings.theme === 'dark' ? 'bg-gray-900 text-gray-300' : 
+            readerSettings.theme === 'sepia' ? 'bg-[#f8f1e3] text-[#4f321c]' : 'bg-white text-gray-900'
+          }`}>
+            {/* Reader Header */}
+            <div className={`sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b transition-colors ${
+               readerSettings.theme === 'dark' ? 'border-gray-800 bg-gray-900/95' : 
+               readerSettings.theme === 'sepia' ? 'border-[#e0d6c2] bg-[#f8f1e3]/95' : 'border-gray-100 bg-white/95'
+            } backdrop-blur-sm`}>
+              <button 
+                onClick={() => setReaderItem(null)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-black/5 transition-colors"
+              >
+                <ChevronLeft size={20} />
+                <span className="font-medium">Back</span>
+              </button>
+
+              <div className="flex items-center gap-4">
+                 {/* Appearance Menu */}
+                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5">
+                    <button onClick={() => setReaderSettings(s => ({...s, size: Math.max(12, s.size - 2)}))} className="p-1 hover:text-blue-500"><Type size={14} /></button>
+                    <div className="w-px h-4 bg-gray-400/30"></div>
+                    <button onClick={() => setReaderSettings(s => ({...s, size: Math.min(32, s.size + 2)}))} className="p-1 hover:text-blue-500"><Type size={20} /></button>
+                    <div className="w-px h-4 bg-gray-400/30 mx-2"></div>
+                    <button onClick={() => setReaderSettings(s => ({...s, font: 'sans'}))} className={`text-xs font-sans font-bold ${readerSettings.font === 'sans' ? 'text-blue-500' : ''}`}>Ag</button>
+                    <button onClick={() => setReaderSettings(s => ({...s, font: 'serif'}))} className={`text-xs font-serif font-bold ${readerSettings.font === 'serif' ? 'text-blue-500' : ''}`}>Ag</button>
+                    <button onClick={() => setReaderSettings(s => ({...s, font: 'mono'}))} className={`text-xs font-mono font-bold ${readerSettings.font === 'mono' ? 'text-blue-500' : ''}`}>Ag</button>
+                    <div className="w-px h-4 bg-gray-400/30 mx-2"></div>
+                    <button onClick={() => setReaderSettings(s => ({...s, theme: 'white'}))} className={`p-1 ${readerSettings.theme === 'white' ? 'text-blue-500' : ''}`}><Sun size={16}/></button>
+                    <button onClick={() => setReaderSettings(s => ({...s, theme: 'sepia'}))} className={`p-1 ${readerSettings.theme === 'sepia' ? 'text-blue-500' : ''}`}><Coffee size={16}/></button>
+                    <button onClick={() => setReaderSettings(s => ({...s, theme: 'dark'}))} className={`p-1 ${readerSettings.theme === 'dark' ? 'text-blue-500' : ''}`}><Moon size={16}/></button>
+                 </div>
+              </div>
             </div>
-            <div className="max-w-2xl mx-auto p-8 prose">
-               {readerItem.videoEmbed && <iframe src={readerItem.videoEmbed} className="w-full aspect-video mb-8 rounded-lg"/>}
-               <h1>{readerItem.title}</h1>
-               <div dangerouslySetInnerHTML={{ __html: readerItem.content }} />
+
+            {/* Reader Content */}
+            <div className={`max-w-2xl mx-auto px-6 py-12 ${
+              readerSettings.font === 'serif' ? 'font-serif' : readerSettings.font === 'mono' ? 'font-mono' : 'font-sans'
+            }`} style={{ fontSize: `${readerSettings.size}px`, lineHeight: '1.8' }}>
+              
+              {/* Metadata Header */}
+              <div className="mb-12 border-b border-black/10 pb-8">
+                <h1 className="text-4xl font-bold mb-4 leading-tight">{readerItem.title}</h1>
+                <div className="flex flex-wrap items-center gap-4 text-base opacity-60 mb-6">
+                   <span className="flex items-center gap-1"><ExternalLink size={16}/> {new URL(readerItem.url).hostname}</span>
+                   <span>•</span>
+                   <span className="flex items-center gap-1"><Clock size={16}/> {readerItem.readingTime} read</span>
+                   <span>•</span>
+                   <span className="flex items-center gap-1"><Layout size={16}/> {readerItem.difficulty}</span>
+                   <span>•</span>
+                   <span>{readerItem.date}</span>
+                </div>
+                
+                {/* Video Embed in Reader */}
+                {readerItem.videoEmbed && (
+                  <div className="w-full aspect-video rounded-xl overflow-hidden bg-black shadow-lg mb-8">
+                    <iframe src={readerItem.videoEmbed} title={readerItem.title} className="w-full h-full" allowFullScreen frameBorder="0" />
+                  </div>
+                )}
+
+                {/* Featured Image (if no video) */}
+                {readerItem.image && !readerItem.videoEmbed && (
+                  <div className="rounded-xl overflow-hidden shadow-lg mb-8">
+                    <img src={readerItem.image} alt="Cover" className="w-full h-auto object-cover max-h-[400px]" onError={(e) => e.target.style.display = 'none'} />
+                  </div>
+                )}
+              </div>
+
+              <div className="prose-content" dangerouslySetInnerHTML={{ __html: readerItem.content }} />
+              
+              {/* Dynamic Styles for Reader Content */}
+              <style>{`
+                .prose-content img { max-width: 100%; height: auto; border-radius: 8px; margin: 2rem 0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+                .prose-content p { margin-bottom: 1.5em; }
+                .prose-content h1, .prose-content h2, .prose-content h3 { margin-top: 2em; margin-bottom: 0.5em; font-weight: bold; line-height: 1.3; }
+                .prose-content a { text-decoration: underline; text-underline-offset: 4px; color: inherit; opacity: 0.8; }
+                .prose-content blockquote { border-left: 4px solid currentColor; opacity: 0.7; padding-left: 1rem; margin: 2rem 0; font-style: italic; }
+                .prose-content ul, .prose-content ol { margin: 1.5rem 0; padding-left: 2rem; }
+                .prose-content li { margin-bottom: 0.5rem; list-style-type: disc; }
+              `}</style>
             </div>
           </div>
         )}
